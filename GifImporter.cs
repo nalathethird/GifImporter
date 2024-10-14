@@ -18,7 +18,7 @@ public class GifImporter : ResoniteMod
     {
     public override string Name    => "GifImporter";
     public override string Author  => "astral";
-    public override string Version => "1.2.0";
+    public override string Version => "1.2.1";
     public override string Link    => "https://github.com/astralchan/GifImporter";
 
     [AutoRegisterConfigKey]
@@ -37,9 +37,11 @@ public class GifImporter : ResoniteMod
     [HarmonyPatch(typeof(ImageImporter), "ImportImage")]
     class GifImporterPatch
         {
-        public static bool Prefix(ref Task __result, ImportItem item, Slot targetSlot, float3? forward,
-            StereoLayout stereoLayout, ImageProjection projection, bool setupScreenshotMetadata, bool addCollider,
-            TextureConversion convert, bool pointFiltering) {
+        // stripMetadata parameter is unused, because we always strip metadata anyway.
+        // Correct behavior would copy the metadata from the original file if the bool is false.
+        public static bool Prefix(ref Task<Result> __result, ImportItem item, Slot targetSlot, bool addCollider,
+            ImageProjection projection, StereoLayout stereoLayout, float3? forward, TextureConversion convert,
+            bool setupScreenshotMetadata, bool pointFiltering, bool uncompressed, bool alphaBleed, bool stripMetadata) {
             Uri? uri = item.assetUri ?? (Uri.TryCreate(item.filePath, UriKind.Absolute, out var u) ? u : null);
             Image? image = null;
             bool validGif = false;
@@ -86,7 +88,8 @@ public class GifImporter : ResoniteMod
                 return true;
             }
 
-            __result = targetSlot.StartTask(async delegate () {
+            __result = targetSlot.StartTask<Result>(async delegate ()
+            {
                 await default(ToBackground);
 
                 // Load the image
@@ -158,7 +161,12 @@ public class GifImporter : ResoniteMod
                     }
 
                     spriteSheet.Save(spritePath, saveFormat);
-                } finally {
+                }
+                catch (Exception e) {
+                    Error("Failed to read GIF");
+                    return Result.Failure(e);
+                }
+                finally {
                     image!.Dispose();
                 }
 
@@ -183,9 +191,21 @@ public class GifImporter : ResoniteMod
                 if (pointFiltering) {
                     tex.FilterMode.Value = TextureFilterMode.Point;
                 }
-                ImageImporter.SetupTextureProxyComponents(targetSlot, tex, stereoLayout, projection,
-                    setupScreenshotMetadata);
-                if (projection != 0)
+                if(uncompressed)
+                {
+                    tex.Uncompressed.Value = true;
+                    tex.PowerOfTwoAlignThreshold.Value = 0f;
+                }
+                /*
+                // Not sure exactly what this does, but it might be incorrect to apply it after the sprite sheet has been generated.
+                // I put this code just to keep partity with ImageImporter.ImportImage
+                if (alphaBleed)
+                {
+                    await tex.BleedColorToAlpha();
+                }
+                */
+                ImageImporter.SetupTextureProxyComponents(targetSlot, tex, stereoLayout, projection, setupScreenshotMetadata);
+                if (projection != 0) 
                     ImageImporter.Create360Sphere(targetSlot, tex, stereoLayout, projection, addCollider);
                 else {
                     while (!tex.IsAssetAvailable) await default(NextUpdate);
@@ -195,6 +215,7 @@ public class GifImporter : ResoniteMod
                 if (setupScreenshotMetadata)
                     targetSlot.GetComponentInChildren<PhotoMetadata>()?.NotifyOfScreenshot();
 
+                // Set up GIF parameters
                 AtlasInfo _AtlasInfo = targetSlot.AttachComponent<AtlasInfo>();
                 UVAtlasAnimator _UVAtlasAnimator = targetSlot.AttachComponent<UVAtlasAnimator>();
                 TimeIntDriver _TimeIntDriver = targetSlot.AttachComponent<TimeIntDriver>();
@@ -216,6 +237,8 @@ public class GifImporter : ResoniteMod
                 // Set inventory preview to first frame
                 ItemTextureThumbnailSource _inventoryPreview = targetSlot.GetComponent<ItemTextureThumbnailSource>();
                 _inventoryPreview.Crop.Value = new Rect(0, 0, 1f / (float)gifCols, 1f / (float)gifRows);
+
+                return Result.Success();
             });
 
             return false;
