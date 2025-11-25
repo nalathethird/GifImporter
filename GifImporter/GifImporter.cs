@@ -19,7 +19,7 @@ public class GifImporter : ResoniteMod
     {
     public override string Name    => "GifImporter";
     public override string Author  => "astral";
-    public override string Version => "1.2.2";
+    public override string Version => "1.2.3";
     public override string Link    => "https://github.com/nalathethird/GifImporter";
 
     [AutoRegisterConfigKey]
