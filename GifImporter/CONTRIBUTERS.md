@@ -12,3 +12,5 @@ Compatibility for unix-like filesystem / etc
 Made nice thumbnail when saving gif (first frame instead of entire sprite preview)
 * [989onan](https://github.com/989onan)
 Added support for resdb links and switched from system temp folder
+* [NalaTheThird](https://github.com/nalathethird)
+Recompile for .NET 9/10 - 2025
